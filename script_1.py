@@ -1,7 +1,8 @@
 import numpy as np
 import math
 
-def class_entropy(ts_a:list, ts_r:list) -> float:
+
+def class_entropy(ts_a: list, ts_r: list) -> float:
     """Calculate the entropy of a class, which is the information needed to describe the class distributions between two time series.
 
     Parameters
@@ -25,6 +26,7 @@ def class_entropy(ts_a:list, ts_r:list) -> float:
     h_class = p_a * np.log2(p_a) + p_r * np.log2(p_r)
     return h_class
 
+
 def segmentation_entropy(segmentations):
     """
     Là j'ai pas trop compris c'était quoi l'input
@@ -37,9 +39,10 @@ def segmentation_entropy(segmentations):
         h_segmentation += pi * math.log(1/pi)
     return h_segmentation
 
+
 def single_feature_reward(ts_a, ts_r, segmentations):
     """
-    Parei du coup là.
+    Pareil du coup là.
     """
     d = class_entropy(ts_a, ts_r) / segmentation_entropy(segmentations)
     return d
