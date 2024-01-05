@@ -29,8 +29,7 @@ def class_entropy(ts_a: list, ts_r: list) -> float:
 
 def segmentation_entropy(segmentations):
     """
-    Là j'ai pas trop compris c'était quoi l'input
-    
+    Là j'ai pas trop compris c'était quoi l'input.
     """
     h_segmentation = 0
     for pi in segmentations:
@@ -46,3 +45,40 @@ def single_feature_reward(ts_a, ts_r, segmentations):
     """
     d = class_entropy(ts_a, ts_r) / segmentation_entropy(segmentations)
     return d
+
+
+def absolute_and_sort_distances(distances: dict) -> dict:
+
+    if all(value < 0 for value in distances.values()):
+        positive_distances = {key: np.abs(value) for key, value in distances.items()}
+
+    sorted_distances = dict(sorted(positive_distances.items(), key=lambda x: x[1], reverse=True))
+
+    return sorted_distances
+
+
+def maximum_leap(distances: dict) -> float:
+    ranked_distances = absolute_and_sort_distances(distances)
+
+    leaps = [last_distance - distance for last_distance, distance in zip(ranked_distances.values(), list(ranked_distances.values())[1:])]
+
+    maximum_leap = max(leaps)
+
+    return maximum_leap
+
+
+def reward_leap_filter(distances: dict) -> dict:
+    threshold = maximum_leap(distances)
+    to_be_discarded = set()
+
+    for a, i in distances.items():
+        for b, j in distances.items():
+            if a != b:
+                leap = j - i
+                print(leap)
+                if leap > threshold:
+                    to_be_discarded.update([a, b])
+
+    filtered_features = {feature: distance for feature, distance in distances.items() if feature not in to_be_discarded}
+
+    return filtered_features
