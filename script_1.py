@@ -36,7 +36,7 @@ def from_files_to_anomaly_type(train_files: list) -> dict:
     return labeled_files
 
 
-def split_anomalies_and_references(
+def split_references_and_anomalies(
         data_folder: str,
         label_filename: str
         ) -> (pd.DataFrame, pd.DataFrame):
@@ -427,7 +427,7 @@ def reward_leap_filter(distances: dict) -> dict:
                 to_be_discarded.update([feature])
         last_distance = distance
 
-    filtered_features = {feature: distance for feature, distance in distances.items() if feature not in to_be_discarded}
+    filtered_features = [feature for feature in distances.keys() if feature not in to_be_discarded]
 
     return filtered_features
 
@@ -436,7 +436,7 @@ def get_explanatory_features():
     DATA_FOLDER = "folder_1"
     LABEL_FILENAME = "labels"
 
-    references, anomalies = split_anomalies_and_references(DATA_FOLDER, LABEL_FILENAME)
+    references, anomalies = split_references_and_anomalies(DATA_FOLDER, LABEL_FILENAME)
 
     bursty_refs = references[references.index.str.startswith("bursty")]
     bursty_anos = anomalies[anomalies.index.str.startswith("bursty")]
@@ -496,13 +496,37 @@ def get_explanatory_features():
     features_stalled = reward_leap_filter(distances_stalled)
     features_cpu = reward_leap_filter(distances_cpu)
 
-    print(anomalies)
-
-    return features_bursty, features_bursty,  features_stalled, features_cpu
+    return features_bursty, features_stalled, features_cpu
 
 
-def construct_explanations():
-    columns = ["trace_id", "ano_id", "exp_size", "exp_instability", "explanation"]
-    explanations = pd.DataFrame(columns=columns)
+def get_features_integer_indice(features: list, anomalies: pd.DataFrame):
+    indices = []
+    for feature in features:
+        indice = anomalies.columns.get_loc(feature)
+        indices.append(indice)
 
-    return None
+    return indices
+
+
+def construct_explanations(labels: pd.DataFrame):
+    columns_to_add = ["exp_size", "exp_instability", "explanation"]
+    explanations = labels[["trace_id", "ano_id", "ano_type"]].copy()
+
+    features_bursty, features_stalled, features_cpu = get_explanatory_features()
+
+    explanations.loc[explanations["ano_type"] == "bursty_input", "explanation"] = features_bursty.values()
+    explanations.loc[explanations["ano_type"] == "stalled_input", "explanation"] = features_stalled.values()
+    explanations.loc[explanations["ano_type"] == "cpu_contention", "explanation"] = features_cpu.values()
+
+    return explanations
+
+
+# _, labels = get_train_test_data("folder_1", "labels")
+
+# print(construct_explanations(labels))
+features_bursty, features_stalled, features_cpu = get_explanatory_features()
+_, anomalies = split_references_and_anomalies("folder_1", "labels")
+
+indices = get_features_integer_indice(features_bursty, anomalies)
+print(indices)
+print(features_bursty)
