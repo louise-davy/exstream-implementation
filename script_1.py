@@ -400,7 +400,7 @@ def maximum_leap(distances: dict) -> float:
     return maximum_leap
 
 
-def reward_leap_filter(distances: dict) -> dict:
+def reward_leap_filter(distances: dict) -> list:
     """
     Discard the features that rank below a sharp drop in the reward.
 
@@ -415,28 +415,27 @@ def reward_leap_filter(distances: dict) -> dict:
         The remaining features after filtering.
 
     """
+    if len(distances) > 0:  # j'ai ajouté ça au cas où
+        threshold = maximum_leap(distances)
+        to_be_discarded = set()
 
-    threshold = maximum_leap(distances)
-    to_be_discarded = set()
+        last_distance = 0
+        for feature, distance in distances.items():
+            if last_distance != 0:
+                leap = last_distance - distance
+                if leap <= threshold:
+                    to_be_discarded.update([feature])
+            last_distance = distance
 
-    last_distance = 0
-    for feature, distance in distances.items():
-        if last_distance != 0:
-            leap = last_distance - distance
-            if leap <= threshold:
-                to_be_discarded.update([feature])
-        last_distance = distance
+        filtered_features = [feature for feature in distances.keys() if feature not in to_be_discarded]
 
-    filtered_features = [feature for feature in distances.keys() if feature not in to_be_discarded]
+        return filtered_features
 
-    return filtered_features
+    else:
+        return None
 
 
-def get_explanatory_features():
-    DATA_FOLDER = "folder_1"
-    LABEL_FILENAME = "labels"
-
-    references, anomalies = split_references_and_anomalies(DATA_FOLDER, LABEL_FILENAME)
+def get_explanatory_features(references: pd.DataFrame, anomalies: pd.DataFrame):
 
     bursty_refs = references[references.index.str.startswith("bursty")]
     bursty_anos = anomalies[anomalies.index.str.startswith("bursty")]
@@ -492,9 +491,9 @@ def get_explanatory_features():
 
     # STEP 3.2 : REMOVING LOW-RANKED FEATURES
 
-    features_bursty = reward_leap_filter(distances_bursty)
+    features_bursty = reward_leap_filter(distances_bursty) 
     features_stalled = reward_leap_filter(distances_stalled)
-    features_cpu = reward_leap_filter(distances_cpu)
+    features_cpu = reward_leap_filter(distances_cpu)  # apparement j'ai des pb ici avec les subsamples des anos et refs
 
     return features_bursty, features_stalled, features_cpu
 
@@ -508,25 +507,70 @@ def get_features_integer_indice(features: list, anomalies: pd.DataFrame):
     return indices
 
 
-def construct_explanations(labels: pd.DataFrame):
-    columns_to_add = ["exp_size", "exp_instability", "explanation"]
+def assign_explanation(row, bursty_explanation, stalled_explanation, cpu_explanation):
+    if row["ano_type"] == "bursty_input":
+        return bursty_explanation
+    elif row["ano_type"] == "stalled_input":
+        return stalled_explanation
+    elif row["ano_type"] == "cpu_contention":
+        return cpu_explanation
+    else:
+        return None
+
+
+def construct_explanations(labels: pd.DataFrame, datafolder: str, label_filename: str):
     explanations = labels[["trace_id", "ano_id", "ano_type"]].copy()
 
-    features_bursty, features_stalled, features_cpu = get_explanatory_features()
+    references, anomalies = split_references_and_anomalies(datafolder, label_filename)
 
-    explanations.loc[explanations["ano_type"] == "bursty_input", "explanation"] = features_bursty.values()
-    explanations.loc[explanations["ano_type"] == "stalled_input", "explanation"] = features_stalled.values()
-    explanations.loc[explanations["ano_type"] == "cpu_contention", "explanation"] = features_cpu.values()
+    features_bursty, features_stalled, features_cpu = get_explanatory_features(references, anomalies)
+
+    features_indices_bursty = get_features_integer_indice(features_bursty, anomalies)
+    features_indices_stalled = get_features_integer_indice(features_stalled, anomalies)
+    features_indices_cpu = get_features_integer_indice(features_cpu, anomalies)
+
+    explanations["explanation"] = explanations.apply(assign_explanation,
+                                                     args=(features_indices_bursty,
+                                                           features_indices_stalled,
+                                                           features_indices_cpu),
+                                                     axis=1)
 
     return explanations
 
 
 # _, labels = get_train_test_data("folder_1", "labels")
+# references, anomalies = split_references_and_anomalies("folder_1", "labels")
 
-# print(construct_explanations(labels))
-features_bursty, features_stalled, features_cpu = get_explanatory_features()
-_, anomalies = split_references_and_anomalies("folder_1", "labels")
+# print(construct_explanations(labels, "folder_1", "labels"))
 
-indices = get_features_integer_indice(features_bursty, anomalies)
-print(indices)
-print(features_bursty)
+def compute_instability(explanations: list):
+    flattened_explanations = [item for sublist in explanations for item in sublist]
+    unique_explanations = set(flattened_explanations)
+    instability = 1 - len(unique_explanations) / len(explanations)
+
+    return instability
+
+
+def compute_explanations_instabilities():
+    explanations_bursty = []
+    explanations_stalled = []
+    explanations_cpu = []
+    references, anomalies = split_references_and_anomalies("folder_1", "labels")
+    for i in range(5):
+        sampled_references = references.sample(frac=0.8) # ici et en dessous on n'est pas certain de récupérer au moins un sample de chaque type d'anomalie, ni d'avoir les bons "matchs" références/anomalies
+        sampled_anomalies = anomalies.sample(frac=0.8)
+
+        features_bursty, features_stalled, features_cpu = get_explanatory_features(sampled_references, sampled_anomalies) # du coup ici il peut y avoir des soucis
+
+        explanations_bursty.append(features_bursty)
+        explanations_stalled.append(features_stalled)
+        explanations_cpu.append(features_cpu)
+
+    instabilty_bursty = compute_instability(explanations_bursty)
+    instabilty_stalled = compute_instability(explanations_stalled)
+    instabilty_cpu = compute_instability(explanations_cpu)
+
+    return instabilty_bursty, instabilty_stalled, instabilty_cpu
+
+
+print(compute_explanations_instabilities())
