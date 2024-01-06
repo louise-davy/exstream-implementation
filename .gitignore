@@ -164,7 +164,8 @@ cython_debug/
 
 # Juliette's virtual environment
 exstream-venv
-algorithm_as_a_notebook_juliette.ipynb
+algorithm_as_a_notebook_old.ipynb
+algorithm_as_a_notebook_new.ipynb
 
 # data
 folder_1
