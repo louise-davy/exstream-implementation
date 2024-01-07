@@ -109,7 +109,115 @@ def split_references_and_anomalies(
     return references, anomalies
 
 
-# USEFUL FUNCTIONS
+# STEP 1 : FUNCTIONS FOR CORRELATION CLUSTERING
+
+def correlated_features_filter(
+    df: pd.DataFrame, correlation_threshold: float = 0.9
+) -> pd.DataFrame:
+    """
+    Identify and remove correlated features using clustering. Similar features
+    are identified using pairwise correlation. A feature is represented as a
+    node. Two nodes are connected if the pairwise correlation of the two
+    features exceeds a threshold.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        A dataframe containing both the references and the anomalies.
+
+    correlation_threshold : float
+        The threshold used to identify the correlated features.
+
+    Returns
+    -------
+    selected_features : pd.DataFrame
+        The initial dataframe cleared of its correlated features.
+    """
+
+    # Step 1: Calculate the correlation matrix
+    correlation_matrix = df.corr()
+
+    # Step 2: Create a graph based on pairwise correlations
+    G = nx.Graph()
+
+    # Add nodes (features) to the graph
+    G.add_nodes_from(correlation_matrix.columns)
+
+    # Add edges between nodes if the correlation exceeds a threshold
+    for i in range(len(correlation_matrix.columns[:-4])):  # Last 4 columns are metadata
+        for j in range(i):
+            if abs(correlation_matrix.iloc[i, j]) > correlation_threshold:
+                G.add_edge(correlation_matrix.columns[i], correlation_matrix.columns[j])
+
+    # Step 3: Extract clusters from the graph
+    clusters = list(nx.connected_components(G))
+
+    # Step 4: Select one representative feature from each cluster
+    selected_features = [cluster.pop() for cluster in clusters]
+
+    return selected_features
+
+
+# STEP 2 : FUNCTIONS FOR FALSE POSITIVES FILTERING
+
+def false_positive_filter(refs: pd.DataFrame, anos: pd.DataFrame, cols: list) -> list:
+    """
+    Identify and remove false positive features.
+
+    Parameters
+    ----------
+    refs : pd.DataFrame
+        The data in the reference intervals.
+    anos : pd.DataFrame
+        The data in the anomaly intervals.
+    cols : list
+        The columns corresponding to the remaining features of the desired
+        type of anomaly.
+
+    Returns
+    -------
+    new_cols : list
+        The columns corresponding to the remaining features of the desired
+        type of anomaly.
+    """
+
+    new_cols = []
+    refs_df = refs[cols]
+    anos_df = anos[cols]
+    cols_to_visit = list(anos_df.columns[:-4])
+    for ano in anos.index.unique():
+        cols_for_this_ano = []
+        nb_matches = []
+        for col in cols_to_visit:
+            pattern = anos_df.loc[ano, col]
+            ts = refs_df.loc[:, col]
+            matches = stumpy.match(pattern, ts, max_distance=28.0)
+            nb_matches.append(len(matches))
+            if len(list(matches)) <= 1:
+                if col not in new_cols:
+                    cols_for_this_ano.append(col)
+            # else:
+            # print(f"Found {len(matches)} match(es) for {col} in ano {ano}")
+        if not cols_for_this_ano:
+            new_cols.append(cols_to_visit[np.array(nb_matches).argmin()])
+        else:
+            new_cols.append(cols_for_this_ano)
+    return new_cols
+
+
+def assign_cols_per_ano(anos, new_filtered_features):
+    anos["filtered_columns"] = None
+    for i, ano in enumerate(anos.index.unique()):
+        anos.loc[ano, "filtered_columns"] = str(new_filtered_features[i])
+    anos["filtered_columns"] = anos["filtered_columns"].apply(
+        lambda x: x.strip("][").split(", ")
+    )
+    return anos
+
+
+# STEP 3: FUNCTIONS FOR REWARD LEAP FILTERING
+
+# STEP 3.1 : FUNCTIONS FOR SINGLE FEATURE REWARDS RANKING
 
 
 def class_entropy(nb_ts_a: list, nb_ts_r: list) -> float:
@@ -343,98 +451,13 @@ def entropy_based_single_feature_reward(refs: pd.DataFrame, anos: pd.DataFrame) 
         #    }
 
         sorted_distances = dict(
-            sorted(positive_distances.items(), key=lambda x: x[1], reverse=True)
+            sorted(distances.items(), key=lambda x: x[1], reverse=True)
         )
 
     return sorted_distances
 
 
-def correlated_features_filter(
-    df: pd.DataFrame, correlation_threshold: float = 0.9
-) -> pd.DataFrame:
-    """
-    Identify and remove correlated features using clustering. Similar features
-    are identified using pairwise correlation. A feature is represented as a
-    node. Two nodes are connected if the pairwise correlation of the two
-    features exceeds a threshold.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        A dataframe containing both the references and the anomalies.
-
-    correlation_threshold : float
-        The threshold used to identify the correlated features.
-
-    Returns
-    -------
-    selected_features : pd.DataFrame
-        The initial dataframe cleared of its correlated features.
-    """
-
-    # Step 1: Calculate the correlation matrix
-    correlation_matrix = df.corr()
-
-    # Step 2: Create a graph based on pairwise correlations
-    G = nx.Graph()
-
-    # Add nodes (features) to the graph
-    G.add_nodes_from(correlation_matrix.columns)
-
-    # Add edges between nodes if the correlation exceeds a threshold
-    for i in range(len(correlation_matrix.columns[:-4])):  # Last 4 columns are metadata
-        for j in range(i):
-            if abs(correlation_matrix.iloc[i, j]) > correlation_threshold:
-                G.add_edge(correlation_matrix.columns[i], correlation_matrix.columns[j])
-
-    # Step 3: Extract clusters from the graph
-    clusters = list(nx.connected_components(G))
-
-    # Step 4: Select one representative feature from each cluster
-    selected_features = [cluster.pop() for cluster in clusters]
-
-    return selected_features
-
-
-def false_positive_filter(refs: pd.DataFrame, anos: pd.DataFrame, cols: list) -> list:
-    """
-    Identify and remove false positive features.
-
-    Parameters
-    ----------
-    refs : pd.DataFrame
-        The data in the reference intervals.
-    anos : pd.DataFrame
-        The data in the anomaly intervals.
-    cols : list
-        The columns corresponding to the remaining features of the desired
-        type of anomaly.
-
-    Returns
-    -------
-    new_cols : list
-        The columns corresponding to the remaining features of the desired
-        type of anomaly.
-    """
-
-    new_cols = []
-    refs_df = refs[cols]
-    anos_df = anos[cols]
-    cols_to_visit = list(anos_df.columns[:-4])
-
-    for ano in anos_df.index.unique():
-        for col in cols_to_visit:
-            pattern = anos_df.loc[ano, col]
-            ts = refs_df.loc[:, col]
-            matches = stumpy.match(pattern, ts, max_distance=28.0)
-            if not list(matches):
-                if col not in new_cols:
-                    new_cols.append(col)
-            else:
-                cols_to_visit.remove(col)
-                # print(f"Found {len(matches)} match(es) for {col} in ano {ano}")
-
-    return new_cols
+# STEP 3.2 : FUNCTIONS FOR REMOVING LOW-RANKED FEATURES
 
 
 def maximum_leap(distances: dict) -> float:
@@ -483,18 +506,19 @@ def reward_leap_filter(distances: dict) -> list:
     """
     if len(distances) > 0:  # j'ai ajouté ça au cas où
         threshold = maximum_leap(distances)
-        to_be_discarded = set()
-
+        to_keep = set()
         last_distance = 0
+
         for feature, distance in distances.items():
             if last_distance != 0:
                 leap = last_distance - distance
-                if leap <= threshold:
-                    to_be_discarded.update([feature])
+                if leap == threshold:
+                    break
             last_distance = distance
+            to_keep.update([feature])
 
         filtered_features = [
-            feature for feature in distances.keys() if feature not in to_be_discarded
+            feature for feature in distances.keys() if feature in to_keep
         ]
 
         return filtered_features
@@ -503,79 +527,58 @@ def reward_leap_filter(distances: dict) -> list:
         return None
 
 
-def get_explanatory_features(references: pd.DataFrame, anomalies: pd.DataFrame):
-    """
-    Get the explanatory features for bursty, stalled, and CPU anomalies.
+def compute_explanatory_features(anos: pd.DataFrame, distances: dict) -> dict:
+    selected_features = {}
 
-    Parameters:
-    references (pd.DataFrame): DataFrame containing reference data.
-    anomalies (pd.DataFrame): DataFrame containing anomaly data.
+    for ano_index in anos.index.unique():
+        ano = anos.loc[ano_index]
+        filtered_cols = ano["filtered_columns"].values
+        for cols in np.unique(filtered_cols):
+            cols = [s.replace("'", "") for s in cols]
+            selected_distances = {feat: dist for feat, dist in distances.items() if feat in cols}
+            if len(selected_distances) > 1:
+                filtered_features = reward_leap_filter(selected_distances)
+                print(filtered_features)
+                selected_features[ano_index] = filtered_features
+            else:
+                selected_features[ano_index] = list(selected_distances.keys())
 
-    Returns:
-    tuple: A tuple containing the explanatory features for bursty, stalled,
-    and CPU anomalies.
-    """
-    bursty_refs = references[references.index.str.startswith("bursty")]
-    bursty_anos = anomalies[anomalies.index.str.startswith("bursty")]
-    bursty_df = pd.concat([bursty_refs, bursty_anos])
+    return selected_features
 
-    stalled_refs = references[references.index.str.startswith("stalled")]
-    stalled_anos = anomalies[anomalies.index.str.startswith("stalled")]
-    stalled_df = pd.concat([stalled_refs, stalled_anos])
 
-    cpu_refs = references[references.index.str.startswith("CPU")]
-    cpu_anos = anomalies[anomalies.index.str.startswith("CPU")]
-    cpu_df = pd.concat([cpu_refs, cpu_anos])
+# NOTEBOOK STOPED HERE
 
-    all_dfs = [bursty_df, stalled_df, cpu_df]
+def get_explanatory_features(data_folder: str, label_filename: str):
 
-    # STEP 1 : FILTERING BY CORRELATION CLUSTERING
+    train_files, labels = get_train_test_data(data_folder, label_filename)
+    labeled_files = from_files_to_anomaly_type(train_files)
+    
+    refs, anos = split_references_and_anomalies(data_folder, label_filename)
+    
+    all_data = pd.concat([refs, anos])
 
-    filtered_features = []
+    filtered_features = correlated_features_filter(all_data)
 
-    for df in all_dfs:
-        filtered_features.append(correlated_features_filter(df))
+    new_filtered_features = false_positive_filter(refs, anos, filtered_features)
+    new_anos = assign_cols_per_ano(anos, new_filtered_features)
 
-    # STEP 2 : FALSE POSITIVE FILTERING
+    bursty_refs = refs[refs.index.str.startswith("bursty")]
+    stalled_refs = refs[refs.index.str.startswith("stalled")]
+    cpu_refs = refs[refs.index.str.startswith("CPU")]
 
-    new_filtered_features_bursty = false_positive_filter(
-        bursty_refs, bursty_anos, filtered_features[0]
-    )
-    new_filtered_features_stalled = false_positive_filter(
-        stalled_refs, stalled_anos, filtered_features[1]
-    )
-    new_filtered_features_cpu = false_positive_filter(
-        cpu_refs, cpu_anos, filtered_features[2]
-    )
+    bursty_anos = new_anos[anos.index.str.startswith("bursty")]
+    stalled_anos = new_anos[anos.index.str.startswith("stalled")]
+    cpu_anos = new_anos[anos.index.str.startswith("CPU")]
 
-    # STEP 3 : REWARD LEAP FILTERING
+    bursty_distances = entropy_based_single_feature_reward(bursty_refs, bursty_anos)
+    stalled_distances = entropy_based_single_feature_reward(stalled_refs, stalled_anos)
+    cpu_distances = entropy_based_single_feature_reward(cpu_refs, cpu_anos)
 
-    # STEP 3.1 : SINGLE-FEATURE REWARD RANKING
+    bursty_features = compute_explanatory_features(bursty_anos, bursty_distances)
+    stalled_features = compute_explanatory_features(stalled_anos, stalled_distances)
+    cpu_features = compute_explanatory_features(cpu_anos, cpu_distances)
 
-    distances_bursty = entropy_based_single_feature_reward(
-        bursty_refs.loc[:, new_filtered_features_bursty + ["type_data"]],
-        bursty_anos.loc[:, new_filtered_features_bursty + ["type_data"]],
-    )
-
-    distances_stalled = entropy_based_single_feature_reward(
-        stalled_refs.loc[:, new_filtered_features_stalled + ["type_data"]],
-        stalled_anos.loc[:, new_filtered_features_stalled + ["type_data"]],
-    )
-
-    distances_cpu = entropy_based_single_feature_reward(
-        cpu_refs.loc[:, new_filtered_features_cpu + ["type_data"]],
-        cpu_anos.loc[:, new_filtered_features_cpu + ["type_data"]],
-    )
-
-    # STEP 3.2 : REMOVING LOW-RANKED FEATURES
-
-    features_bursty = reward_leap_filter(distances_bursty)
-    features_stalled = reward_leap_filter(distances_stalled)
-    features_cpu = reward_leap_filter(
-        distances_cpu
-    )  # apparement j'ai des pb ici avec les subsamples des anos et refs
-
-    return features_bursty, features_stalled, features_cpu
+    return bursty_features, stalled_features, cpu_features
 
 
 def get_features_integer_indice(features: list, anomalies: pd.DataFrame):
