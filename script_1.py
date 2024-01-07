@@ -723,7 +723,11 @@ DATA_FOLDER = "data/folder_1"
 LABEL_FILENAME = "labels"
 
 print("With clustering:")
-print(construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=True))
+csv_with_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=True)
+print(csv_with_cluster)
+csv_with_cluster.to_csv("explanations_with_cluster.csv")
 
 print("Without clustering:")
-print(construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=False))
+csv_without_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=False)
+print(csv_without_cluster)
+csv_without_cluster.to_csv("explanations_without_cluster.csv")
