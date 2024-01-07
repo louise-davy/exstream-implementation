@@ -123,8 +123,7 @@ def correlated_features_filter(
     node. Two nodes are connected if the pairwise correlation of the two
     features exceeds a threshold.
 
-    When not using clustering, we simply remove the features that are
-    correlated.
+    When not using clustering, we do not remove correlated features.
 
     Parameters
     ----------
@@ -170,22 +169,7 @@ def correlated_features_filter(
         selected_features = [cluster.pop() for cluster in clusters]
 
     else:
-        # Calculate the correlation matrix
-        correlation_matrix = df.loc[:, :-4].corr()
-
-        correlation_mask = (correlation_matrix.abs() < correlation_threshold) & (
-            correlation_matrix > 0.0
-        )
-
-        # Create a set of features to remove
-        selected_features = []
-        for feature in correlation_matrix.columns:
-            correlated_features = correlation_matrix.index[
-                correlation_mask[feature]
-            ].tolist()
-            selected_features.append(correlated_features)
-
-        selected_features = list(set(selected_features))
+        selected_features = correlation_matrix.columns
 
     return selected_features
 
@@ -727,7 +711,7 @@ csv_without_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluste
 print(csv_without_cluster)
 csv_without_cluster.to_csv("explanations_without_cluster.csv")
 
-print("With clustering:")
-csv_with_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=True)
-print(csv_with_cluster)
-csv_with_cluster.to_csv("explanations_with_cluster.csv")
+# print("With clustering:")
+# csv_with_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=True)
+# print(csv_with_cluster)
+# csv_with_cluster.to_csv("explanations_with_cluster.csv")
