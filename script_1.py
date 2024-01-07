@@ -666,7 +666,7 @@ def construct_explanations(data_folder: str, label_filename: str, cluster: bool)
     )
     explanations["exp_size"] = explanations["explanation"].apply(lambda x: len(x))
 
-    test = get_explanations_instabilities(explanations, refs, anos)
+    test = get_explanations_instabilities(explanations, refs, anos, cluster)
 
     return test
 
@@ -690,7 +690,7 @@ def compute_instability(explanations: list):
 
 
 def get_explanations_instabilities(
-    explanations: pd.DataFrame, refs: pd.DataFrame, anos: pd.DataFrame
+    explanations: pd.DataFrame, refs: pd.DataFrame, anos: pd.DataFrame, cluster: bool
 ):
     """
     Computes the instabilities of different types of explanations (bursty, stalled,
@@ -701,12 +701,18 @@ def get_explanations_instabilities(
         A tuple containing the instabilities of bursty explanations, stalled
         explanations, and CPU explanations.
     """
+    anos.drop("filtered_columns", axis=1, inplace=True)
 
     for i in range(5):
         sampled_refs = refs.sample(frac=0.8)
-        sampled_anos = anos.sample(frac=0.8)
+        sampled_anos = anos.drop().sample(frac=0.8)
 
-        explanatory_features = get_explanatory_features(sampled_refs, sampled_anos)
+        print(sampled_refs.head())
+        print(sampled_anos.head())
+
+        explanatory_features = get_explanatory_features(
+            sampled_refs, sampled_anos, cluster
+        )
 
         col_name = "exp_" + str(i)
         explanations[col_name] = list(explanatory_features.values())
