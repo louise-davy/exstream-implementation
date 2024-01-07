@@ -547,9 +547,7 @@ def compute_explanatory_features(anos: pd.DataFrame, distances: dict) -> dict:
 
 # NOTEBOOK STOPED HERE
 
-def get_explanatory_features(data_folder: str, label_filename: str):
-
-    refs, anos = split_references_and_anomalies(data_folder, label_filename)
+def get_explanatory_features(refs: pd.DataFrame, anos: pd.DataFrame):
 
     all_data = pd.concat([refs, anos])
 
@@ -579,13 +577,6 @@ def get_explanatory_features(data_folder: str, label_filename: str):
     return explanatory_features
 
 
-DATA_FOLDER = "folder_1"
-LABEL_FILENAME = "labels"
-
-explanatory_features = get_explanatory_features(DATA_FOLDER, LABEL_FILENAME)
-print(explanatory_features)
-
-
 def get_features_integer_indice(features: list, anomalies: pd.DataFrame):
     """
     Returns the indices of the specified features in the anomalies DataFrame.
@@ -606,7 +597,7 @@ def get_features_integer_indice(features: list, anomalies: pd.DataFrame):
     return indices
 
 
-def construct_explanations(labels: pd.DataFrame, data_folder: str, label_filename: str):
+def construct_explanations(data_folder: str, label_filename: str):
     """
     Constructs explanations for each label in the provided DataFrame.
 
@@ -621,23 +612,22 @@ def construct_explanations(labels: pd.DataFrame, data_folder: str, label_filenam
         'trace_id', 'ano_id', 'ano_type', and 'explanation'.
     """
 
+    refs, anos = split_references_and_anomalies(data_folder, label_filename)
+    _, labels = get_train_test_data(data_folder, label_filename)
 
-    explanations = labels[["trace_id", "ano_id", "ano_type"]].copy()
+    labels_df = labels[["trace_id", "ano_id"]].copy()
 
-    explanatory_features = get_explanatory_features(data_folder, label_filename)
+    explanatory_features = get_explanatory_features(refs, anos)
+    explanatory_features_df = pd.DataFrame(list(explanatory_features.items()), columns=['index', 'explanation'])
 
-    explanations = pd.DataFrame(explanations, orient="index", columns=["explanation"])
+    explanations = pd.merge(labels_df, explanatory_features_df, left_index=True, right_index=True)
+    explanations.drop(["index"], axis=1, inplace=True)
+    explanations["explanation"] = explanations["explanation"].apply(lambda x: get_features_integer_indice(x, anos))
+    explanations["exp_size"] = explanations["explanation"].apply(lambda x: len(x))
 
-    explanatory_indices_features = get_features_integer_indice(explanatory_features, anomalies)
+    test = get_explanations_instabilities(explanations, refs, anos)
 
-
-    return explanations
-
-
-# _, labels = get_train_test_data("folder_1", "labels")
-# references, anomalies = split_references_and_anomalies("folder_1", "labels")
-
-# print(construct_explanations(labels, "folder_1", "labels"))
+    return test
 
 
 def compute_instability(explanations: list):
@@ -658,7 +648,7 @@ def compute_instability(explanations: list):
     return instability
 
 
-def compute_explanations_instabilities():
+def get_explanations_instabilities(explanations: pd.DataFrame, refs: pd.DataFrame, anos: pd.DataFrame):
     """
     Computes the instabilities of different types of explanations (bursty, stalled,
     and CPU)
@@ -668,30 +658,22 @@ def compute_explanations_instabilities():
         A tuple containing the instabilities of bursty explanations, stalled
         explanations, and CPU explanations.
     """
-    explanations_bursty = []
-    explanations_stalled = []
-    explanations_cpu = []
-    references, anomalies = split_references_and_anomalies("folder_1", "labels")
+
     for i in range(5):
-        sampled_references = references.sample(
-            frac=0.8
-        )  # ici et en dessous on n'est pas certain de récupérer au moins un sample de
-        # chaque type d'anomalie, ni d'avoir les bons "matchs" références/anomalies
-        sampled_anomalies = anomalies.sample(frac=0.8)
+        sampled_refs = refs.sample(frac=0.8)
+        sampled_anos = anos.sample(frac=0.8)
 
-        features_bursty, features_stalled, features_cpu = get_explanatory_features(
-            sampled_references, sampled_anomalies
-        )  # du coup ici il peut y avoir des soucis
+        explanatory_features = get_explanatory_features(sampled_refs, sampled_anos)
 
-        explanations_bursty.append(features_bursty)
-        explanations_stalled.append(features_stalled)
-        explanations_cpu.append(features_cpu)
+        col_name = "exp_" + str(i)
+        explanations[col_name] = list(explanatory_features.values())
 
-    instabilty_bursty = compute_instability(explanations_bursty)
-    instabilty_stalled = compute_instability(explanations_stalled)
-    instabilty_cpu = compute_instability(explanations_cpu)
+    # instabilty_bursty = compute_instability(explanations_bursty)
 
-    return instabilty_bursty, instabilty_stalled, instabilty_cpu
+    return explanations
 
 
-# print(compute_explanations_instabilities())
+DATA_FOLDER = "folder_1"
+LABEL_FILENAME = "labels"
+
+print(construct_explanations(DATA_FOLDER, LABEL_FILENAME))
