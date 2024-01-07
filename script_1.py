@@ -139,7 +139,7 @@ def class_entropy(nb_ts_a: list, nb_ts_r: list) -> float:
         )
     p_a = nb_ts_a / (nb_ts_a + nb_ts_r)
     p_r = nb_ts_r / (nb_ts_a + nb_ts_r)
-    h_class = p_a * np.log2(p_a) + p_r * np.log2(p_r)
+    h_class = p_a * np.log2(1 / p_a) + p_r * np.log2(1 / p_r)
 
     return h_class
 
@@ -337,10 +337,10 @@ def entropy_based_single_feature_reward(refs: pd.DataFrame, anos: pd.DataFrame) 
         # On stocke la single reward function dans le dictionnaire
         distances[feature] = distance
 
-        if all(value < 0 for value in distances.values()):
-            positive_distances = {
-                key: np.abs(value) for key, value in distances.items()
-            }
+        # if all(value < 0 for value in distances.values()):
+        #    positive_distances = {
+        #        key: np.abs(value) for key, value in distances.items()
+        #    }
 
         sorted_distances = dict(
             sorted(positive_distances.items(), key=lambda x: x[1], reverse=True)
@@ -372,18 +372,25 @@ def correlated_features_filter(
         The initial dataframe cleared of its correlated features.
     """
 
+    # Step 1: Calculate the correlation matrix
     correlation_matrix = df.corr()
 
+    # Step 2: Create a graph based on pairwise correlations
     G = nx.Graph()
+
+    # Add nodes (features) to the graph
     G.add_nodes_from(correlation_matrix.columns)
 
-    for i in range(len(correlation_matrix.columns[:-4])):
+    # Add edges between nodes if the correlation exceeds a threshold
+    for i in range(len(correlation_matrix.columns[:-4])):  # Last 4 columns are metadata
         for j in range(i):
             if abs(correlation_matrix.iloc[i, j]) > correlation_threshold:
                 G.add_edge(correlation_matrix.columns[i], correlation_matrix.columns[j])
 
+    # Step 3: Extract clusters from the graph
     clusters = list(nx.connected_components(G))
 
+    # Step 4: Select one representative feature from each cluster
     selected_features = [cluster.pop() for cluster in clusters]
 
     return selected_features
