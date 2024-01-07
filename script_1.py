@@ -538,7 +538,6 @@ def compute_explanatory_features(anos: pd.DataFrame, distances: dict) -> dict:
             selected_distances = {feat: dist for feat, dist in distances.items() if feat in cols}
             if len(selected_distances) > 1:
                 filtered_features = reward_leap_filter(selected_distances)
-                print(filtered_features)
                 selected_features[ano_index] = filtered_features
             else:
                 selected_features[ano_index] = list(selected_distances.keys())
@@ -550,11 +549,8 @@ def compute_explanatory_features(anos: pd.DataFrame, distances: dict) -> dict:
 
 def get_explanatory_features(data_folder: str, label_filename: str):
 
-    train_files, labels = get_train_test_data(data_folder, label_filename)
-    labeled_files = from_files_to_anomaly_type(train_files)
-    
     refs, anos = split_references_and_anomalies(data_folder, label_filename)
-    
+
     all_data = pd.concat([refs, anos])
 
     filtered_features = correlated_features_filter(all_data)
@@ -579,6 +575,13 @@ def get_explanatory_features(data_folder: str, label_filename: str):
     cpu_features = compute_explanatory_features(cpu_anos, cpu_distances)
 
     return bursty_features, stalled_features, cpu_features
+
+
+DATA_FOLDER = "folder_1"
+LABEL_FILENAME = "labels"
+
+bursty_features, stalled_features, cpu_features = get_explanatory_features(DATA_FOLDER, LABEL_FILENAME)
+print(bursty_features, stalled_features, cpu_features)
 
 
 def get_features_integer_indice(features: list, anomalies: pd.DataFrame):
@@ -722,4 +725,4 @@ def compute_explanations_instabilities():
     return instabilty_bursty, instabilty_stalled, instabilty_cpu
 
 
-print(compute_explanations_instabilities())
+# print(compute_explanations_instabilities())
