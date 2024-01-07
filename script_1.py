@@ -173,8 +173,8 @@ def correlated_features_filter(
         # Calculate the correlation matrix
         correlation_matrix = df.loc[:, :-4].corr()
 
-        correlation_mask = (correlation_matrix.abs() > correlation_threshold) & (
-            correlation_matrix < 1.0
+        correlation_mask = (correlation_matrix.abs() < correlation_threshold) & (
+            correlation_matrix > 0.0
         )
 
         # Create a set of features to remove
@@ -665,7 +665,6 @@ def construct_explanations(data_folder: str, label_filename: str, cluster: bool)
         lambda x: get_features_integer_indice(x, anos)
     )
     explanations["exp_size"] = explanations["explanation"].apply(lambda x: len(x))
-    print(explanations)
 
     test = get_explanations_instabilities(explanations, refs, anos, cluster)
 
@@ -705,12 +704,8 @@ def get_explanations_instabilities(
     anos.drop("filtered_columns", axis=1, inplace=True)
 
     for i in range(5):
-        print(i)
         sampled_refs = refs.sample(frac=0.8)
         sampled_anos = anos.sample(frac=0.8)
-
-        print(sampled_refs.head())
-        print(sampled_anos.head())
 
         explanatory_features = get_explanatory_features(
             sampled_refs, sampled_anos, cluster
@@ -718,7 +713,6 @@ def get_explanations_instabilities(
 
         col_name = "exp_" + str(i)
         explanations[col_name] = list(explanatory_features.values())
-        print(explanations)
 
     # instabilty_bursty = compute_instability(explanations_bursty)
 
@@ -728,8 +722,12 @@ def get_explanations_instabilities(
 DATA_FOLDER = "data/folder_1"
 LABEL_FILENAME = "labels"
 
-print("With clustering:")
-print(construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=True))
+print("Without clustering:")
+csv_without_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=False)
+print(csv_without_cluster)
+csv_without_cluster.to_csv("explanations_without_cluster.csv")
 
-# print("Without clustering:")
-# print(construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=False))
+print("With clustering:")
+csv_with_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=True)
+print(csv_with_cluster)
+csv_with_cluster.to_csv("explanations_with_cluster.csv")
