@@ -111,14 +111,20 @@ def split_references_and_anomalies(
 
 # STEP 1 : FUNCTIONS FOR CORRELATION CLUSTERING
 
+
 def correlated_features_filter(
-    df: pd.DataFrame, correlation_threshold: float = 0.9
+    df: pd.DataFrame, correlation_threshold: float = 0.9, cluster=True
 ) -> pd.DataFrame:
     """
-    Identify and remove correlated features using clustering. Similar features
+    Identify and remove correlated features using (or not) clustering.
+
+    When using clustering, similar features
     are identified using pairwise correlation. A feature is represented as a
     node. Two nodes are connected if the pairwise correlation of the two
     features exceeds a threshold.
+
+    When not using clustering, we simply remove the features that are
+    correlated.
 
     Parameters
     ----------
@@ -128,37 +134,64 @@ def correlated_features_filter(
     correlation_threshold : float
         The threshold used to identify the correlated features.
 
+    clustering : bool
+        Whether to use clustering or not.
+
     Returns
     -------
-    selected_features : pd.DataFrame
-        The initial dataframe cleared of its correlated features.
+    selected_features : list
+        The list of features that are not correlated.
     """
 
-    # Step 1: Calculate the correlation matrix
-    correlation_matrix = df.corr()
+    if cluster:
+        # Step 1: Calculate the correlation matrix
+        correlation_matrix = df.corr()
 
-    # Step 2: Create a graph based on pairwise correlations
-    G = nx.Graph()
+        # Step 2: Create a graph based on pairwise correlations
+        G = nx.Graph()
 
-    # Add nodes (features) to the graph
-    G.add_nodes_from(correlation_matrix.columns)
+        # Add nodes (features) to the graph
+        G.add_nodes_from(correlation_matrix.columns)
 
-    # Add edges between nodes if the correlation exceeds a threshold
-    for i in range(len(correlation_matrix.columns[:-4])):  # Last 4 columns are metadata
-        for j in range(i):
-            if abs(correlation_matrix.iloc[i, j]) > correlation_threshold:
-                G.add_edge(correlation_matrix.columns[i], correlation_matrix.columns[j])
+        # Add edges between nodes if the correlation exceeds a threshold
+        for i in range(
+            len(correlation_matrix.columns[:-4])
+        ):  # Last 4 columns are metadata
+            for j in range(i):
+                if abs(correlation_matrix.iloc[i, j]) > correlation_threshold:
+                    G.add_edge(
+                        correlation_matrix.columns[i], correlation_matrix.columns[j]
+                    )
 
-    # Step 3: Extract clusters from the graph
-    clusters = list(nx.connected_components(G))
+        # Step 3: Extract clusters from the graph
+        clusters = list(nx.connected_components(G))
 
-    # Step 4: Select one representative feature from each cluster
-    selected_features = [cluster.pop() for cluster in clusters]
+        # Step 4: Select one representative feature from each cluster
+        selected_features = [cluster.pop() for cluster in clusters]
+
+    else:
+        # Calculate the correlation matrix
+        correlation_matrix = df.loc[:, :-4].corr()
+
+        correlation_mask = (correlation_matrix.abs() > correlation_threshold) & (
+            correlation_matrix < 1.0
+        )
+
+        # Create a set of features to remove
+        selected_features = []
+        for feature in correlation_matrix.columns:
+            correlated_features = correlation_matrix.index[
+                correlation_mask[feature]
+            ].tolist()
+            selected_features.append(correlated_features)
+
+        selected_features = list(set(selected_features))
 
     return selected_features
 
 
 # STEP 2 : FUNCTIONS FOR FALSE POSITIVES FILTERING
+
 
 def false_positive_filter(refs: pd.DataFrame, anos: pd.DataFrame, cols: list) -> list:
     """
@@ -535,7 +568,9 @@ def compute_explanatory_features(anos: pd.DataFrame, distances: dict) -> dict:
         filtered_cols = ano["filtered_columns"].values
         for cols in np.unique(filtered_cols):
             cols = [s.replace("'", "") for s in cols]
-            selected_distances = {feat: dist for feat, dist in distances.items() if feat in cols}
+            selected_distances = {
+                feat: dist for feat, dist in distances.items() if feat in cols
+            }
             if len(selected_distances) > 1:
                 filtered_features = reward_leap_filter(selected_distances)
                 selected_features[ano_index] = filtered_features
@@ -547,11 +582,11 @@ def compute_explanatory_features(anos: pd.DataFrame, distances: dict) -> dict:
 
 # NOTEBOOK STOPED HERE
 
-def get_explanatory_features(refs: pd.DataFrame, anos: pd.DataFrame):
 
+def get_explanatory_features(refs: pd.DataFrame, anos: pd.DataFrame, cluster: bool):
     all_data = pd.concat([refs, anos])
 
-    filtered_features = correlated_features_filter(all_data)
+    filtered_features = correlated_features_filter(all_data, cluster)
 
     new_filtered_features = false_positive_filter(refs, anos, filtered_features)
     new_anos = assign_cols_per_ano(anos, new_filtered_features)
@@ -597,7 +632,7 @@ def get_features_integer_indice(features: list, anomalies: pd.DataFrame):
     return indices
 
 
-def construct_explanations(data_folder: str, label_filename: str):
+def construct_explanations(data_folder: str, label_filename: str, cluster: bool):
     """
     Constructs explanations for each label in the provided DataFrame.
 
@@ -617,12 +652,18 @@ def construct_explanations(data_folder: str, label_filename: str):
 
     labels_df = labels[["trace_id", "ano_id"]].copy()
 
-    explanatory_features = get_explanatory_features(refs, anos)
-    explanatory_features_df = pd.DataFrame(list(explanatory_features.items()), columns=['index', 'explanation'])
+    explanatory_features = get_explanatory_features(refs, anos, cluster)
+    explanatory_features_df = pd.DataFrame(
+        list(explanatory_features.items()), columns=["index", "explanation"]
+    )
 
-    explanations = pd.merge(labels_df, explanatory_features_df, left_index=True, right_index=True)
+    explanations = pd.merge(
+        labels_df, explanatory_features_df, left_index=True, right_index=True
+    )
     explanations.drop(["index"], axis=1, inplace=True)
-    explanations["explanation"] = explanations["explanation"].apply(lambda x: get_features_integer_indice(x, anos))
+    explanations["explanation"] = explanations["explanation"].apply(
+        lambda x: get_features_integer_indice(x, anos)
+    )
     explanations["exp_size"] = explanations["explanation"].apply(lambda x: len(x))
 
     test = get_explanations_instabilities(explanations, refs, anos)
@@ -648,7 +689,9 @@ def compute_instability(explanations: list):
     return instability
 
 
-def get_explanations_instabilities(explanations: pd.DataFrame, refs: pd.DataFrame, anos: pd.DataFrame):
+def get_explanations_instabilities(
+    explanations: pd.DataFrame, refs: pd.DataFrame, anos: pd.DataFrame
+):
     """
     Computes the instabilities of different types of explanations (bursty, stalled,
     and CPU)
@@ -673,7 +716,11 @@ def get_explanations_instabilities(explanations: pd.DataFrame, refs: pd.DataFram
     return explanations
 
 
-DATA_FOLDER = "folder_1"
+DATA_FOLDER = "data/folder_1"
 LABEL_FILENAME = "labels"
 
-print(construct_explanations(DATA_FOLDER, LABEL_FILENAME))
+print("With clustering:")
+print(construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=True))
+
+print("Without clustering:")
+print(construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=False))
