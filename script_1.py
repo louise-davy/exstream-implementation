@@ -574,14 +574,16 @@ def get_explanatory_features(data_folder: str, label_filename: str):
     stalled_features = compute_explanatory_features(stalled_anos, stalled_distances)
     cpu_features = compute_explanatory_features(cpu_anos, cpu_distances)
 
-    return bursty_features, stalled_features, cpu_features
+    explanatory_features = {**bursty_features, **stalled_features, **cpu_features}
+
+    return explanatory_features
 
 
 DATA_FOLDER = "folder_1"
 LABEL_FILENAME = "labels"
 
-bursty_features, stalled_features, cpu_features = get_explanatory_features(DATA_FOLDER, LABEL_FILENAME)
-print(bursty_features, stalled_features, cpu_features)
+explanatory_features = get_explanatory_features(DATA_FOLDER, LABEL_FILENAME)
+print(explanatory_features)
 
 
 def get_features_integer_indice(features: list, anomalies: pd.DataFrame):
@@ -604,32 +606,7 @@ def get_features_integer_indice(features: list, anomalies: pd.DataFrame):
     return indices
 
 
-def assign_explanation(row, bursty_explanation, stalled_explanation, cpu_explanation):
-    """
-    Assigns an explanation based on the value of the 'ano_type' column in the given row.
-
-    Parameters:
-        row (pandas.Series): The row containing the 'ano_type' column.
-        bursty_explanation (str): The explanation for 'bursty_input' type.
-        stalled_explanation (str): The explanation for 'stalled_input' type.
-        cpu_explanation (str): The explanation for 'cpu_contention' type.
-
-    Returns:
-        str or None: The assigned explanation based on the 'ano_type' value, or None if
-        the 'ano_type' value is not recognized.
-    """
-
-    if row["ano_type"] == "bursty_input":
-        return bursty_explanation
-    elif row["ano_type"] == "stalled_input":
-        return stalled_explanation
-    elif row["ano_type"] == "cpu_contention":
-        return cpu_explanation
-    else:
-        return None
-
-
-def construct_explanations(labels: pd.DataFrame, datafolder: str, label_filename: str):
+def construct_explanations(labels: pd.DataFrame, data_folder: str, label_filename: str):
     """
     Constructs explanations for each label in the provided DataFrame.
 
@@ -644,23 +621,15 @@ def construct_explanations(labels: pd.DataFrame, datafolder: str, label_filename
         'trace_id', 'ano_id', 'ano_type', and 'explanation'.
     """
 
+
     explanations = labels[["trace_id", "ano_id", "ano_type"]].copy()
 
-    references, anomalies = split_references_and_anomalies(datafolder, label_filename)
+    explanatory_features = get_explanatory_features(data_folder, label_filename)
 
-    features_bursty, features_stalled, features_cpu = get_explanatory_features(
-        references, anomalies
-    )
+    explanations = pd.DataFrame(explanations, orient="index", columns=["explanation"])
 
-    features_indices_bursty = get_features_integer_indice(features_bursty, anomalies)
-    features_indices_stalled = get_features_integer_indice(features_stalled, anomalies)
-    features_indices_cpu = get_features_integer_indice(features_cpu, anomalies)
+    explanatory_indices_features = get_features_integer_indice(explanatory_features, anomalies)
 
-    explanations["explanation"] = explanations.apply(
-        assign_explanation,
-        args=(features_indices_bursty, features_indices_stalled, features_indices_cpu),
-        axis=1,
-    )
 
     return explanations
 
