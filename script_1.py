@@ -173,8 +173,8 @@ def correlated_features_filter(
         # Calculate the correlation matrix
         correlation_matrix = df.loc[:, :-4].corr()
 
-        correlation_mask = (correlation_matrix.abs() > correlation_threshold) & (
-            correlation_matrix < 1.0
+        correlation_mask = (correlation_matrix.abs() < correlation_threshold) & (
+            correlation_matrix > 0.0
         )
 
         # Create a set of features to remove
@@ -705,10 +705,7 @@ def get_explanations_instabilities(
 
     for i in range(5):
         sampled_refs = refs.sample(frac=0.8)
-        sampled_anos = anos.drop().sample(frac=0.8)
-
-        print(sampled_refs.head())
-        print(sampled_anos.head())
+        sampled_anos = anos.sample(frac=0.8)
 
         explanatory_features = get_explanatory_features(
             sampled_refs, sampled_anos, cluster
