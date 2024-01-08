@@ -718,10 +718,11 @@ def get_explanations_instabilities(
 DATA_FOLDER = "data/folder_1"
 LABEL_FILENAME = "labels"
 
-print("Without clustering:")
-csv_without_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=False)
-print(csv_without_cluster)
-csv_without_cluster.to_csv("explanations_without_cluster.csv")
+# print("Without clustering:")
+# csv_without_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME,
+# cluster=False)
+# print(csv_without_cluster)
+# csv_without_cluster.to_csv("explanations_without_cluster.csv")
 
 print("With clustering:")
 csv_with_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=True)
