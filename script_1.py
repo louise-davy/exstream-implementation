@@ -665,10 +665,13 @@ def compute_instability(explanations: list):
     Returns:
     float: The instability value, which is a measure of how stable the explanations are.
     """
-
+    instability = 0
     flattened_explanations = [item for sublist in explanations for item in sublist]
     unique_explanations = set(flattened_explanations)
-    instability = 1 - len(unique_explanations) / len(explanations)
+    for feature in unique_explanations:
+        p = flattened_explanations.count(feature) / len(flattened_explanations)
+        instability += -p * np.log2(p)
+    # instability = 1 - len(unique_explanations) / len(explanations)
 
     return instability
 
@@ -698,7 +701,16 @@ def get_explanations_instabilities(
         col_name = "exp_" + str(i)
         explanations[col_name] = list(explanatory_features.values())
 
-    # instabilty_bursty = compute_instability(explanations_bursty)
+    explanations["exp_instability"] = explanations.apply(
+        lambda x: compute_instability(
+            [x["exp_0"], x["exp_1"], x["exp_2"], x["exp_3"], x["exp_4"]]
+        ),
+        axis=1,
+    )
+
+    explanations.drop(
+        ["exp_0", "exp_1", "exp_2", "exp_3", "exp_4"], axis=1, inplace=True
+    )
 
     return explanations
 
@@ -711,7 +723,7 @@ csv_without_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluste
 print(csv_without_cluster)
 csv_without_cluster.to_csv("explanations_without_cluster.csv")
 
-# print("With clustering:")
-# csv_with_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=True)
-# print(csv_with_cluster)
-# csv_with_cluster.to_csv("explanations_with_cluster.csv")
+print("With clustering:")
+csv_with_cluster = construct_explanations(DATA_FOLDER, LABEL_FILENAME, cluster=True)
+print(csv_with_cluster)
+csv_with_cluster.to_csv("explanations_with_cluster.csv")
