@@ -6,7 +6,10 @@ import numpy as np
 
 
 def false_positive_filter(
-    refs: pd.DataFrame, anos: pd.DataFrame, cols: list, false_positive_filtering: bool
+    ano_data: pd.DataFrame,
+    refs: pd.DataFrame,
+    false_positive_filtering: bool,
+    max_distance: float,
 ) -> list:
     """
     Identify and remove false positive features.
@@ -27,46 +30,23 @@ def false_positive_filter(
         The columns corresponding to the remaining features of the desired
         type of anomaly.
     """
+    cols_for_this_ano = []
+    nb_matches = []
+    cols_to_visit = [col for col in ano_data.columns if col != "type_data"]
     if false_positive_filtering:
-        new_cols = []
-        refs_df = refs[cols]
-        anos_df = anos[cols]
-        cols_to_visit = list(anos_df.columns[:-4])
-        for ano in anos.index.unique():
-            cols_for_this_ano = []
-            nb_matches = []
-            for col in cols_to_visit:
-                pattern = anos_df.loc[ano, col]
-                ts = refs_df.loc[:, col]
-                matches = stumpy.match(pattern, ts, max_distance=28.0)
-                nb_matches.append(len(matches))
-                if len(list(matches)) <= 1:
-                    if col not in new_cols:
-                        cols_for_this_ano.append(col)
-                # else:
-                # print(f"Found {len(matches)} match(es) for {col} in ano {ano}")
-            if not cols_for_this_ano:
-                new_cols.append(cols_to_visit[np.array(nb_matches).argmin()])
-            else:
-                new_cols.append(cols_for_this_ano)
+        for col in cols_to_visit:
+            pattern = ano_data.loc[:, col]
+            ts = refs.loc[:, col]
+            matches = stumpy.match(pattern, ts, max_distance=max_distance)
+            nb_matches.append(len(matches))
+            if len(list(matches)) <= 5:
+                if col not in cols_for_this_ano:
+                    cols_for_this_ano.append(col)
+        if not cols_for_this_ano:
+            cols_for_this_ano.append(cols_to_visit[np.array(nb_matches).argmin()])
 
     else:
-        new_cols = []
-        anos_df = anos[cols]
-        cols_to_visit = list(anos_df.columns[:-4])
-        for ano in anos.index.unique():
-            cols_for_this_ano = []
-            for col in cols_to_visit:
-                cols_for_this_ano.append(col)
-            new_cols.append(cols_for_this_ano)
-    return new_cols
+        cols_for_this_ano = cols_to_visit
 
-
-def assign_cols_per_ano(anos, new_filtered_features):
-    anos["filtered_columns"] = None
-    for i, ano in enumerate(anos.index.unique()):
-        anos.loc[ano, "filtered_columns"] = str(new_filtered_features[i])
-    anos["filtered_columns"] = anos["filtered_columns"].apply(
-        lambda x: x.strip("][").split(", ")
-    )
-    return anos
+    cols_for_this_ano.append("type_data")
+    return cols_for_this_ano
