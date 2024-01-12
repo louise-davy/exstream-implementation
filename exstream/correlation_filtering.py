@@ -34,6 +34,8 @@ def correlated_features_filter(
         The list of features that are not correlated.
     """
 
+    columns_without_metadata = df.columns[:-4]
+
     if cluster:
         # Step 1: Calculate the correlation matrix
         correlation_matrix = df.corr()
@@ -42,12 +44,10 @@ def correlated_features_filter(
         G = nx.Graph()
 
         # Add nodes (features) to the graph
-        G.add_nodes_from(correlation_matrix.columns)
+        G.add_nodes_from(columns_without_metadata)
 
         # Add edges between nodes if the correlation exceeds a threshold
-        for i in range(
-            len(correlation_matrix.columns[:-4])
-        ):  # Last 4 columns are metadata
+        for i in range(len(columns_without_metadata)):  # Last 4 columns are metadata
             for j in range(i):
                 if abs(correlation_matrix.iloc[i, j]) > correlation_threshold:
                     G.add_edge(
@@ -61,6 +61,7 @@ def correlated_features_filter(
         selected_features = [cluster.pop() for cluster in clusters]
 
     else:
-        selected_features = df.columns[:-4]
+        selected_features = list(columns_without_metadata)
 
+    selected_features.append("type_data")
     return selected_features

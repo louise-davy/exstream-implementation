@@ -1,3 +1,4 @@
+import logging
 import pandas as pd
 import numpy as np
 
@@ -56,17 +57,18 @@ def shuffle_observations_if_duplicates(
     """
 
     # On récupère le nombre de références et d'anomalies pour chaque modalité
-    value_type_to_count = sorted_values.groupby(feature).value_counts().to_dict()
-
+    value_type_to_count = sorted_values[[feature, "type_data"]].value_counts().to_dict()
     # On récupère le nombre de valeurs distinctes pour chaque modalité (soit 1 lorsque
     # pas de doublons, soit 2, lorsqu'il y a des doublons)
     value_to_count_distinct = (
-        sorted_values.drop_duplicates().groupby(feature).count().to_dict()["type_data"]
+        sorted_values[feature].drop_duplicates().value_counts().to_dict()
     )
+    # print("value_to_count_distinct", value_to_count_distinct)
 
     # On récupère les modalités distinctes (les différentes valeurs prises par la
     # feature)
     modalities = set(sorted_values[feature].tolist())
+    # print("modalities", modalities)
     # En fait, ce qui est un peu bizarre c'est qu'on a des valeurs continues, mais là
     # on va les traiter comme des valeurs discrètes :
     # Par exemple si on considère une colonne qui prend les valeurs 501.03, 501.03,
@@ -198,7 +200,9 @@ def segmentation_entropy(shuffled_values: pd.DataFrame) -> float:
     return segmentation_ent
 
 
-def entropy_based_single_feature_reward(refs: pd.DataFrame, anos: pd.DataFrame) -> dict:
+def entropy_based_single_feature_reward(
+    refs: pd.DataFrame, anos: pd.DataFrame, all_data: pd.DataFrame
+) -> dict:
     """
     Calculates the reward function for a single feature based on the reference
     data and the annotated data.
@@ -216,12 +220,8 @@ def entropy_based_single_feature_reward(refs: pd.DataFrame, anos: pd.DataFrame) 
     class_ent = class_entropy(refs.shape[0], anos.shape[0])
     # On calcule la segmentation entropy pour chaque feature sauf type_data
     for feature in [col for col in refs.columns if col != "type_data"]:
-        # On concatène les références et les anomalies pour la feature
-        all_values = pd.concat(
-            [refs[[feature, "type_data"]], anos[[feature, "type_data"]]]
-        )
         # On trie les valeurs par feature puis par type_data
-        sorted_values = all_values.sort_values(by=[feature, "type_data"])
+        sorted_values = all_data.sort_values(by=[feature, "type_data"])
         # On shuffle les valeurs si on a des doublons
         shuffled_values = shuffle_observations_if_duplicates(sorted_values, feature)
         # On calcule la segmentation entropy
@@ -310,4 +310,5 @@ def reward_leap_filter(distances: dict) -> list:
         return filtered_features
 
     else:
+        logging.warning("Dict distances is empty.")
         return None

@@ -1,31 +1,29 @@
 import numpy as np
 import pandas as pd
+import logging
 
 from exstream.correlation_filtering import correlated_features_filter
-from exstream.false_positive_filtering import false_positive_filter, assign_cols_per_ano
+from exstream.false_positive_filtering import false_positive_filter
 from exstream.entropy_based_single_reward_feature import (
     entropy_based_single_feature_reward,
     reward_leap_filter,
 )
 from utils.get_data import get_train_test_data, split_references_and_anomalies
 
+logging.getLogger("numba").setLevel(logging.WARNING)
 
-def compute_explanatory_features(anos: pd.DataFrame, distances: dict) -> dict:
-    selected_features = {}
 
-    for ano_index in anos.index.unique():
-        ano = anos.loc[ano_index]
-        filtered_cols = ano["filtered_columns"].values
-        for cols in np.unique(filtered_cols):
-            cols = [s.replace("'", "") for s in cols]
-            selected_distances = {
-                feat: dist for feat, dist in distances.items() if feat in cols
-            }
-            if len(selected_distances) > 1:
-                filtered_features = reward_leap_filter(selected_distances)
-                selected_features[ano_index] = filtered_features
-            else:
-                selected_features[ano_index] = list(selected_distances.keys())
+def compute_explanatory_features(distances: dict) -> dict:
+    # col = [s.replace("'", "") for s in col]
+    # selected_distances = {
+    #     feat: dist for feat, dist in distances.items() if feat in anos.columns
+    # }
+    # print(selected_distances)
+    if len(distances) > 1:
+        filtered_features = reward_leap_filter(distances)
+        selected_features = filtered_features
+    else:
+        selected_features = list(distances.keys())
 
     return selected_features
 
@@ -37,36 +35,62 @@ def get_explanatory_features(
     refs: pd.DataFrame,
     anos: pd.DataFrame,
     cluster: bool,
+    correlation_threshold: float,
     false_positive_filtering: bool,
+    max_distance: float,
 ):
+    # CORRELATION FILTERING
     all_data = pd.concat([refs, anos])
 
+    logging.info("Filtering correlated features...")
     filtered_features = correlated_features_filter(
-        all_data, correlation_threshold=0.9, cluster=cluster
+        all_data, correlation_threshold=correlation_threshold, cluster=cluster
     )
-
-    new_filtered_features = false_positive_filter(
-        refs, anos, filtered_features, false_positive_filtering
+    logging.debug(f"Features after correlation filtering: {filtered_features}")
+    logging.info(
+        f"Dropped {len(all_data.columns[:-3]) - len(filtered_features)} features after"
+        "correlation filtering"
     )
-    new_anos = assign_cols_per_ano(anos, new_filtered_features)
+    refs = refs.loc[:, filtered_features]
+    anos = anos.loc[:, filtered_features]
 
-    bursty_refs = refs[refs.index.str.startswith("bursty")]
-    stalled_refs = refs[refs.index.str.startswith("stalled")]
-    cpu_refs = refs[refs.index.str.startswith("CPU")]
+    explanatory_features = {}
 
-    bursty_anos = new_anos[anos.index.str.startswith("bursty")]
-    stalled_anos = new_anos[anos.index.str.startswith("stalled")]
-    cpu_anos = new_anos[anos.index.str.startswith("CPU")]
+    for ano in anos.index.unique():
+        logging.info(f"Anomaly {ano}")
+        ano_data = anos.loc[ano]
+        ano_ref = refs.loc[ano]
 
-    bursty_distances = entropy_based_single_feature_reward(bursty_refs, bursty_anos)
-    stalled_distances = entropy_based_single_feature_reward(stalled_refs, stalled_anos)
-    cpu_distances = entropy_based_single_feature_reward(cpu_refs, cpu_anos)
+        # FALSE POSITIVE FILTERING
+        new_filtered_features = false_positive_filter(
+            ano_ref, refs, false_positive_filtering, max_distance=max_distance
+        )
+        logging.debug(
+            f"Features after false positive filtering: {new_filtered_features}"
+        )
+        logging.info(
+            f"Dropped {len(filtered_features) - len(new_filtered_features)} features"
+            "after false positive filtering"
+        )
 
-    bursty_features = compute_explanatory_features(bursty_anos, bursty_distances)
-    stalled_features = compute_explanatory_features(stalled_anos, stalled_distances)
-    cpu_features = compute_explanatory_features(cpu_anos, cpu_distances)
+        ano_data = ano_data.loc[:, new_filtered_features]
+        ano_ref = ano_ref.loc[:, new_filtered_features]
+        ano_all = pd.concat([ano_ref, ano_data], axis=0)
 
-    explanatory_features = {**bursty_features, **stalled_features, **cpu_features}
+        # ENTROPY BASED SINGLE FEATURE REWARD
+        distance = entropy_based_single_feature_reward(ano_ref, ano_data, ano_all)
+
+        final_features = compute_explanatory_features(distance)
+
+        logging.debug(
+            f"Features after entropy based single feature reward: {final_features}"
+        )
+        logging.info(
+            f"Dropped {len(new_filtered_features) - len(final_features)} features after"
+            "entropy based single feature reward"
+        )
+
+        explanatory_features[ano] = final_features
 
     return explanatory_features
 
@@ -92,7 +116,13 @@ def get_features_integer_indice(features: list, anomalies: pd.DataFrame):
 
 
 def construct_explanations(
-    data_folder: str, label_filename: str, cluster: bool, false_positive_filtering: bool
+    data_folder: str,
+    label_filename: str,
+    cluster: bool,
+    correlation_threshold: float,
+    false_positive_filtering: bool,
+    max_distance: float,
+    verbose: bool,
 ):
     """
     Constructs explanations for each label in the provided DataFrame.
@@ -107,19 +137,30 @@ def construct_explanations(
         pd.DataFrame: DataFrame containing the constructed explanations with columns
         'trace_id', 'ano_id', 'ano_type', and 'explanation'.
     """
-
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
+    logging.info("Importing data...")
     refs, anos = split_references_and_anomalies(data_folder, label_filename)
     _, labels = get_train_test_data(data_folder, label_filename)
 
     labels_df = labels[["trace_id", "ano_id"]].copy()
 
+    logging.info("Getting explanatory features...")
     explanatory_features = get_explanatory_features(
-        refs, anos, cluster, false_positive_filtering
+        refs,
+        anos,
+        cluster,
+        correlation_threshold,
+        false_positive_filtering,
+        max_distance,
     )
     explanatory_features_df = pd.DataFrame(
         list(explanatory_features.items()), columns=["index", "explanation"]
     )
 
+    logging.info("Constructing explanations...")
     explanations = pd.merge(
         labels_df, explanatory_features_df, left_index=True, right_index=True
     )
@@ -129,8 +170,14 @@ def construct_explanations(
     )
     explanations["exp_size"] = explanations["explanation"].apply(lambda x: len(x))
 
+    logging.info("Computing instability...")
     test = get_explanations_instabilities(
-        explanations, refs, anos, cluster, false_positive_filtering
+        explanations,
+        refs,
+        anos,
+        cluster,
+        correlation_threshold,
+        false_positive_filtering,
     )
 
     return test
@@ -162,7 +209,9 @@ def get_explanations_instabilities(
     refs: pd.DataFrame,
     anos: pd.DataFrame,
     cluster: bool,
+    correlation_threshold: float,
     false_positive_filtering: bool,
+    max_distance: float,
 ):
     """
     Computes the instabilities of different types of explanations (bursty, stalled,
@@ -173,14 +222,18 @@ def get_explanations_instabilities(
         A tuple containing the instabilities of bursty explanations, stalled
         explanations, and CPU explanations.
     """
-    anos.drop("filtered_columns", axis=1, inplace=True)
 
     for i in range(5):
         sampled_refs = refs.sample(frac=0.8)
         sampled_anos = anos.sample(frac=0.8)
 
         explanatory_features = get_explanatory_features(
-            sampled_refs, sampled_anos, cluster, false_positive_filtering
+            sampled_refs,
+            sampled_anos,
+            cluster,
+            correlation_threshold,
+            false_positive_filtering,
+            max_distance,
         )
 
         col_name = "exp_" + str(i)
@@ -202,42 +255,73 @@ def get_explanations_instabilities(
 
 DATA_FOLDER = "data/folder_1"
 LABEL_FILENAME = "labels"
+VERBOSE = False
+CORRELATION_THRESHOLD = 0.7
+MAX_DISTANCE = 100.0
 
 print("Without false positive filtering :")
 print("Without clustering:")
 csv_without_cluster = construct_explanations(
-    DATA_FOLDER, LABEL_FILENAME, cluster=False, false_positive_filtering=False
+    DATA_FOLDER,
+    LABEL_FILENAME,
+    cluster=False,
+    false_positive_filtering=False,
+    correlation_threshold=CORRELATION_THRESHOLD,
+    max_distance=MAX_DISTANCE,
+    verbose=VERBOSE,
 )
 print(csv_without_cluster)
 csv_without_cluster.to_csv(
-    "data/folder_1_results/explanations_without_filtering_without_cluster.csv"
+    "data/folder_1_results/explanations_without_false_positive_filtering_"
+    f"{MAX_DISTANCE}_without_cluster_{CORRELATION_THRESHOLD}.csv"
 )
 
 print("With clustering:")
 csv_with_cluster = construct_explanations(
-    DATA_FOLDER, LABEL_FILENAME, cluster=True, false_positive_filtering=False
+    DATA_FOLDER,
+    LABEL_FILENAME,
+    cluster=True,
+    false_positive_filtering=False,
+    correlation_threshold=CORRELATION_THRESHOLD,
+    max_distance=MAX_DISTANCE,
+    verbose=VERBOSE,
 )
 print(csv_with_cluster)
 csv_with_cluster.to_csv(
-    "data/folder_1_results/explanations_without_filtering_with_cluster.csv"
+    "data/folder_1_results/explanations_without_false_positive_filtering_"
+    f"{MAX_DISTANCE}_with_cluster_{CORRELATION_THRESHOLD}.csv"
 )
 
 
 print("With false positive filtering :")
 print("Without clustering:")
 csv_without_cluster = construct_explanations(
-    DATA_FOLDER, LABEL_FILENAME, cluster=False, false_positive_filtering=True
+    DATA_FOLDER,
+    LABEL_FILENAME,
+    cluster=False,
+    false_positive_filtering=True,
+    correlation_threshold=CORRELATION_THRESHOLD,
+    max_distance=MAX_DISTANCE,
+    verbose=VERBOSE,
 )
 print(csv_without_cluster)
 csv_without_cluster.to_csv(
-    "data/folder_1_results/explanations_with_filtering_without_cluster.csv"
+    "data/folder_1_results/explanations_with_false_positive_filtering_"
+    f"{MAX_DISTANCE}_without_cluster_{CORRELATION_THRESHOLD}.csv"
 )
 
 print("With clustering:")
 csv_with_cluster = construct_explanations(
-    DATA_FOLDER, LABEL_FILENAME, cluster=True, false_positive_filtering=True
+    DATA_FOLDER,
+    LABEL_FILENAME,
+    cluster=True,
+    false_positive_filtering=True,
+    correlation_threshold=CORRELATION_THRESHOLD,
+    max_distance=MAX_DISTANCE,
+    verbose=VERBOSE,
 )
 print(csv_with_cluster)
 csv_with_cluster.to_csv(
-    "data/folder_1_results/explanations_with_filtering_with_cluster.csv"
+    "data/folder_1_results/explanations_with_false_positive_filtering_"
+    f"{MAX_DISTANCE}_with_cluster_{CORRELATION_THRESHOLD}.csv"
 )
