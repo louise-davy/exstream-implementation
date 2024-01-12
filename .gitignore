@@ -166,6 +166,7 @@ cython_debug/
 exstream-venv
 algorithm_as_a_notebook_old.ipynb
 algorithm_as_a_notebook_new.ipynb
+algorithm_as_a_notebook.ipynb
 
 # data
 folder_1
