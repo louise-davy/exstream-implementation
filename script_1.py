@@ -178,6 +178,7 @@ def construct_explanations(
         cluster,
         correlation_threshold,
         false_positive_filtering,
+        max_distance,
     )
 
     return test
