@@ -48,7 +48,7 @@ def get_explanatory_features(
     )
     logging.debug(f"Features after correlation filtering: {filtered_features}")
     logging.info(
-        f"Dropped {len(all_data.columns[:-3]) - len(filtered_features)} features after"
+        f"Dropped {len(all_data.columns[:-2]) - len(filtered_features)} features after"
         "correlation filtering"
     )
     refs = refs.loc[:, filtered_features]
@@ -257,8 +257,8 @@ def get_explanations_instabilities(
 DATA_FOLDER = "data/folder_1"
 LABEL_FILENAME = "labels"
 VERBOSE = False
-CORRELATION_THRESHOLD = 0.7
-MAX_DISTANCE = 100.0
+CORRELATION_THRESHOLD = 0.6
+MAX_DISTANCE = 40.0
 
 print("Without false positive filtering :")
 print("Without clustering:")
@@ -274,7 +274,7 @@ csv_without_cluster = construct_explanations(
 print(csv_without_cluster)
 csv_without_cluster.to_csv(
     "data/folder_1_results/explanations_without_false_positive_filtering_"
-    f"{MAX_DISTANCE}_without_cluster_{CORRELATION_THRESHOLD}.csv"
+    f"{MAX_DISTANCE}_without_cluster_{CORRELATION_THRESHOLD}_bis.csv"
 )
 
 print("With clustering:")
@@ -290,7 +290,7 @@ csv_with_cluster = construct_explanations(
 print(csv_with_cluster)
 csv_with_cluster.to_csv(
     "data/folder_1_results/explanations_without_false_positive_filtering_"
-    f"{MAX_DISTANCE}_with_cluster_{CORRELATION_THRESHOLD}.csv"
+    f"{MAX_DISTANCE}_with_cluster_{CORRELATION_THRESHOLD}_bis.csv"
 )
 
 
@@ -308,7 +308,7 @@ csv_without_cluster = construct_explanations(
 print(csv_without_cluster)
 csv_without_cluster.to_csv(
     "data/folder_1_results/explanations_with_false_positive_filtering_"
-    f"{MAX_DISTANCE}_without_cluster_{CORRELATION_THRESHOLD}.csv"
+    f"{MAX_DISTANCE}_without_cluster_{CORRELATION_THRESHOLD}_bis.csv"
 )
 
 print("With clustering:")
@@ -324,5 +324,5 @@ csv_with_cluster = construct_explanations(
 print(csv_with_cluster)
 csv_with_cluster.to_csv(
     "data/folder_1_results/explanations_with_false_positive_filtering_"
-    f"{MAX_DISTANCE}_with_cluster_{CORRELATION_THRESHOLD}.csv"
+    f"{MAX_DISTANCE}_with_cluster_{CORRELATION_THRESHOLD}_bis.csv"
 )
