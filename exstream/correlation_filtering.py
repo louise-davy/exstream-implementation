@@ -63,5 +63,5 @@ def correlated_features_filter(
     else:
         selected_features = list(columns_without_metadata)
 
-    selected_features.append("type_data")
+    selected_features.append(["type_data"])
     return selected_features
